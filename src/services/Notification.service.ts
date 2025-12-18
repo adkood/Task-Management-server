@@ -10,10 +10,7 @@ export const createNotification = async (
   payload: { 
     taskId: string; 
     title: string;
-    changes?: {
-      status?: string;
-      priority?: string;
-    }
+    assignedBy?: string;
   }
 ) => {
   const notification = notificationRepo.create({
@@ -24,7 +21,6 @@ export const createNotification = async (
 
   await notificationRepo.save(notification);
 
-  // Realtime push
   const io = getIO();
   io.to(`user:${userId}`).emit("notification:new", notification);
 

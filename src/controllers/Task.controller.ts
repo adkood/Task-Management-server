@@ -42,17 +42,40 @@ export const remove = async (req: Request, res: Response) => {
 };
 
 export const getAll = async (req: Request, res: Response) => {
-  const tasks = await getTasks({
-    status: req.query.status as string,
-    priority: req.query.priority as string,
-    sort: req.query.sort as "ASC" | "DESC",
-    // Add user ID for personal filtering
-    userId: req.user!.id,
-    assignedToMe: req.query.assignedToMe === 'true',
-    createdByMe: req.query.createdByMe === 'true',
-  });
+  try {
+    // Parse query parameters
+    const filters = {
+      status: req.query.status as string,
+      priority: req.query.priority as string,
+      sort: (req.query.sort as "ASC" | "DESC") || "ASC",
+      userId: req.user!.id,
+      assignedToMe: req.query.assignedToMe === "true",
+      createdByMe: req.query.createdByMe === "true",
+      search: req.query.search as string,
+    };
 
-  return res.json(tasks);
+    const tasks = await getTasks(filters);
+    
+    return res.json({
+      status: "success",
+      data: tasks,
+      filters: {
+        applied: {
+          status: filters.status,
+          priority: filters.priority,
+          sort: filters.sort,
+          assignedToMe: filters.assignedToMe,
+          createdByMe: filters.createdByMe,
+          search: filters.search,
+        },
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      status: "error",
+      message: error.message || "Failed to fetch tasks",
+    });
+  }
 };
 
 export const assignedToMe = async (

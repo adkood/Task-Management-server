@@ -1,35 +1,29 @@
-// services/Task.service.ts - Update with authorization
+// services/Task.service.ts - Updated with simplified socket implementation
 import { AppDataSource } from "../data-source";
 import { Task } from "../entities/Task";
-import { User } from "../entities/User"; // Add User import
+import { User } from "../entities/User";
 import { CreateTaskDto, UpdateTaskDto } from "../dtos/Task.dto";
 import { getIO } from "../socket";
 import { createNotification } from "./Notification.service";
 import { HttpError } from "../utils/HttpError";
-import { Not } from "typeorm"; // Add this import for Not operator
 import { TaskStatus } from "../enums/TaskStatus";
 import { TaskPriority } from "../enums/TaskPriority";
 
 const taskRepo = AppDataSource.getRepository(Task);
-const userRepo = AppDataSource.getRepository(User); // Add user repository
+const userRepo = AppDataSource.getRepository(User);
 
-// services/Task.service.ts - Fix createTask function
 export const createTask = async (
   dto: CreateTaskDto,
   creatorId: string
 ) => {
-  // Validate assigned user exists if provided
-  let assignedToUser: User | null = null;
-
-  if(!dto.assignedToId) {
-    throw new HttpError(404, "User not assigned to task");
+  // Validate assigned user exists
+  if (!dto.assignedToId) {
+    throw new HttpError(400, "User must be assigned to task");
   }
 
-  if (dto.assignedToId) {
-    assignedToUser = await userRepo.findOneBy({ id: dto.assignedToId });
-    if (!assignedToUser) {
-      throw new HttpError(404, "Assigned user not found");
-    }
+  const assignedToUser = await userRepo.findOneBy({ id: dto.assignedToId });
+  if (!assignedToUser) {
+    throw new HttpError(404, "Assigned user not found");
   }
 
   // Validate creator exists
@@ -53,32 +47,22 @@ export const createTask = async (
   task.priority = dto.priority || TaskPriority.MEDIUM;
   task.creator = creatorUser;
   task.creatorId = creatorId;
-  
-  if (assignedToUser) {
-    task.assignedTo = assignedToUser;
-    task.assignedToId = dto.assignedToId;
-  } else {
-    // Default to creator if no assignee specified
-    task.assignedTo = creatorUser;
-    task.assignedToId = creatorId;
-  }
+  task.assignedTo = assignedToUser;
+  task.assignedToId = dto.assignedToId;
 
   await taskRepo.save(task);
 
-  // Emit real-time event for task creation
-  const io = getIO();
-  
-  // Load the task with relations for the event
+  // Load the task with relations
   const taskWithRelations = await taskRepo.findOne({
     where: { id: task.id },
     relations: ["creator", "assignedTo"]
   });
-  
-  if (taskWithRelations) {
-    io.emit("task:created", taskWithRelations);
-  }
 
-  // Send notification if assigned to someone other than creator
+  // REQUIRED: Live update for all users viewing task list/dashboard
+  const io = getIO();
+  io.to("all-tasks").emit("task:created", taskWithRelations || task);
+
+  // REQUIRED: Assignment notification (persistent + instant)
   if (dto.assignedToId && dto.assignedToId !== creatorId) {
     await createNotification(
       dto.assignedToId,
@@ -86,18 +70,24 @@ export const createTask = async (
       {
         taskId: task.id,
         title: task.title,
+        assignedBy: creatorId,
       }
     );
+    
+    // Also send immediate socket notification to the assignee
+    io.to(`user:${dto.assignedToId}`).emit("task:assigned-to-you", {
+      taskId: task.id,
+      title: task.title,
+    });
   }
 
-  // Return the task with relations
   return taskWithRelations || task;
 };
 
 export const updateTask = async (
   taskId: string,
   dto: UpdateTaskDto,
-  userId: string // Add current user ID for authorization
+  userId: string
 ) => {
   const task = await taskRepo.findOne({
     where: { id: taskId },
@@ -132,19 +122,31 @@ export const updateTask = async (
     if (dueDate <= new Date()) {
       throw new HttpError(400, "Due date must be in the future");
     }
+    task.dueDate = dueDate;
   }
 
-  Object.assign(task, {
-    ...dto,
-    ...(dto.dueDate && { dueDate: new Date(dto.dueDate) }),
-  });
+  // Update only provided fields
+  if (dto.title !== undefined) task.title = dto.title;
+  if (dto.description !== undefined) task.description = dto.description;
+  if (dto.status !== undefined) task.status = dto.status;
+  if (dto.priority !== undefined) task.priority = dto.priority;
+  if (dto.assignedToId !== undefined) {
+    task.assignedToId = dto.assignedToId;
+  }
 
   await taskRepo.save(task);
 
+  // REQUIRED: Live update for all users when task's status, priority, or assignee changes
   const io = getIO();
-  io.emit("task:updated", task);
+  const updatedTask = await taskRepo.findOne({
+    where: { id: task.id },
+    relations: ["creator", "assignedTo"]
+  });
+  
+  // Emit to all users viewing task list or dashboard
+  io.to("all-tasks").emit("task:updated", updatedTask || task);
 
-  // Assignment notification
+  // REQUIRED: Assignment notification when assignee changes
   if (dto.assignedToId && dto.assignedToId !== oldAssignee) {
     await createNotification(
       dto.assignedToId,
@@ -152,44 +154,34 @@ export const updateTask = async (
       {
         taskId: task.id,
         title: task.title,
+        assignedBy: userId,
+      }
+    );
+    
+    // Immediate socket notification to new assignee
+    io.to(`user:${dto.assignedToId}`).emit("task:assigned-to-you", {
+      taskId: task.id,
+      title: task.title,
+    });
+  }
+
+  // Optional: Notify on status/priority changes (not required but good UX)
+  const statusChanged = dto.status && dto.status !== oldStatus;
+  const priorityChanged = dto.priority && dto.priority !== oldPriority;
+  
+  if ((statusChanged || priorityChanged) && task.assignedToId && task.assignedToId !== userId) {
+    // Notify assignee about status/priority changes
+    await createNotification(
+      task.assignedToId,
+      "TASK_UPDATED",
+      {
+        taskId: task.id,
+        title: task.title,
       }
     );
   }
 
-  // Task updated notification (for status/priority changes)
-  const statusChanged = dto.status && dto.status !== oldStatus;
-  const priorityChanged = dto.priority && dto.priority !== oldPriority;
-  
-  if (statusChanged || priorityChanged) {
-    // Notify creator and assignee (if different from updater)
-    const usersToNotify = new Set<string>();
-    
-    if (task.creatorId !== userId) {
-      usersToNotify.add(task.creatorId);
-    }
-    
-    if (task.assignedToId && task.assignedToId !== userId) {
-      usersToNotify.add(task.assignedToId);
-    }
-    
-    // Send notifications
-    for (const userToNotify of usersToNotify) {
-      await createNotification(
-        userToNotify,
-        "TASK_UPDATED",
-        {
-          taskId: task.id,
-          title: task.title,
-          changes: {
-            status: statusChanged ? dto.status : undefined,
-            priority: priorityChanged ? dto.priority : undefined,
-          }
-        }
-      );
-    }
-  }
-
-  return task;
+  return updatedTask || task;
 };
 
 export const deleteTask = async (taskId: string, userId: string) => {
@@ -209,9 +201,12 @@ export const deleteTask = async (taskId: string, userId: string) => {
 
   await taskRepo.delete(taskId);
 
-  // Emit real-time event for task deletion
+  // Live update for all users
   const io = getIO();
-  io.emit("task:deleted", { taskId, deletedBy: userId });
+  io.to("all-tasks").emit("task:deleted", { 
+    taskId, 
+    deletedBy: userId 
+  });
 
   return true;
 };
@@ -220,7 +215,7 @@ export const getTasks = async (filters: {
   status?: string;
   priority?: string;
   sort?: "ASC" | "DESC";
-  userId?: string; // Add user ID for filtering
+  userId?: string;
   assignedToMe?: boolean;
   createdByMe?: boolean;
   search?: string;
@@ -237,6 +232,13 @@ export const getTasks = async (filters: {
     
     if (filters.createdByMe) {
       qb.andWhere("task.creatorId = :userId", { userId: filters.userId });
+    }
+
+    // If no specific filter, show tasks user is involved with
+    if (!filters.assignedToMe && !filters.createdByMe) {
+      qb.andWhere("(task.creatorId = :userId OR task.assignedToId = :userId)", { 
+        userId: filters.userId 
+      });
     }
   }
 
@@ -260,7 +262,7 @@ export const getTasks = async (filters: {
     );
   }
 
-  // Sorting
+  // REQUIRED: Sorting by Due Date
   const sortOrder = filters.sort || "ASC";
   qb.orderBy("task.dueDate", sortOrder);
 
@@ -270,6 +272,7 @@ export const getTasks = async (filters: {
 export const getAssignedToUser = async (userId: string) => {
   return taskRepo.find({
     where: { assignedToId: userId },
+    relations: ["creator", "assignedTo"],
     order: { dueDate: "ASC" },
   });
 };
@@ -277,6 +280,7 @@ export const getAssignedToUser = async (userId: string) => {
 export const getCreatedByUser = async (userId: string) => {
   return taskRepo.find({
     where: { creatorId: userId },
+    relations: ["creator", "assignedTo"],
   });
 };
 
@@ -284,7 +288,9 @@ export const getOverdueTasks = async (userId?: string) => {
   const qb = taskRepo
     .createQueryBuilder("task")
     .where("task.dueDate < NOW()")
-    .andWhere("task.status != 'Completed'")
+    .andWhere("task.status != :completedStatus", { 
+      completedStatus: TaskStatus.COMPLETED 
+    })
     .leftJoinAndSelect("task.creator", "creator")
     .leftJoinAndSelect("task.assignedTo", "assignedTo");
 
