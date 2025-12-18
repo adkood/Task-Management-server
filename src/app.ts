@@ -1,0 +1,42 @@
+import dotenv from "dotenv";
+dotenv.config();
+
+import express from "express";
+import cors from "cors";
+import http from "http";
+
+import { AppDataSource } from "./data-source";
+import { ErrorHandler } from "./middlewares/error.middleware";
+import userRouter from "./routes/User.routes";
+import { initSocket } from "./socket";
+
+const app = express();
+const server = http.createServer(app);
+
+// Initialize socket
+initSocket(server);
+
+app.use(express.json());
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL || "*",
+    credentials: true,
+  })
+);
+
+AppDataSource.initialize()
+  .then(() => console.log("DB connected"))
+  .catch((err) => console.error("DB error:", err));
+
+app.get("/ping", (_, res) => {
+  res.json({ success: true, message: "pong" });
+});
+
+app.use("/api/v1/users", userRouter);
+app.use(ErrorHandler);
+
+const port = process.env.PORT || 8080;
+
+server.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
