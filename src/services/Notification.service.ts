@@ -7,7 +7,14 @@ const notificationRepo = AppDataSource.getRepository(Notification);
 export const createNotification = async (
   userId: string,
   type: "TASK_ASSIGNED" | "TASK_UPDATED",
-  payload: { taskId: string; title: string }
+  payload: { 
+    taskId: string; 
+    title: string;
+    changes?: {
+      status?: string;
+      priority?: string;
+    }
+  }
 ) => {
   const notification = notificationRepo.create({
     userId,
@@ -17,7 +24,7 @@ export const createNotification = async (
 
   await notificationRepo.save(notification);
 
-  // 🔴 realtime push
+  // Realtime push
   const io = getIO();
   io.to(`user:${userId}`).emit("notification:new", notification);
 

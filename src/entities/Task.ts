@@ -16,6 +16,12 @@ export class Task {
   @PrimaryGeneratedColumn("uuid")
   id!: string;
 
+  @Column({ type: "uuid"  })
+  creatorId!: string;
+
+  @Column({ type: "uuid" })
+  assignedToId!: string;
+
   @Column({ length: 100 })
   title!: string;
 
@@ -35,15 +41,9 @@ export class Task {
   @JoinColumn({ name: "creatorId" })
   creator!: User;
 
-  @Column()
-  creatorId!: string;
-
   @ManyToOne(() => User)
   @JoinColumn({ name: "assignedToId" })
   assignedTo!: User;
-
-  @Column()
-  assignedToId!: string;
 
   @CreateDateColumn()
   createdAt!: Date;
