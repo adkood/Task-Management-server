@@ -18,7 +18,7 @@ export const createTask = async (
 ) => {
   // Validate assigned user exists
   if (!dto.assignedToId) {
-    throw new HttpError(400, "User must be assigned to task");
+    throw new HttpError(400, "Task must be assigned to a User");
   }
 
   const assignedToUser = await userRepo.findOneBy({ id: dto.assignedToId });

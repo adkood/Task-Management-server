@@ -9,7 +9,7 @@ router.use(authenticate);
 router.post("/", create);
 router.get("/", getAll);
 router.patch("/:id", update);
-// router.delete("/:id", delete);
+// router.delete("/:id");
 
 router.get("/me/assigned", assignedToMe);
 router.get("/me/created", createdByMe);

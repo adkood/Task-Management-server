@@ -10,13 +10,15 @@ import { AppDataSource } from "./data-source";
 import { ErrorHandler } from "./middlewares/error.middleware";
 import authRouter from "./routes/Auth.routes";
 import userRouter from "./routes/User.routes";
+import taskRouter from "./routes/Task.routes";
+import notificationRouter from "./routes/Notification.routes";
+import dashboardRouter from "./routes/Dashboard.routes";
 
 import { initSocket } from "./socket";
 
 const app = express();
 const server = http.createServer(app);
 
-// Initialize socket
 initSocket(server);
 
 app.use(cookieParser());
@@ -38,6 +40,9 @@ app.get("/ping", (_, res) => {
 
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/users", userRouter);
+app.use("/api/v1/tasks", taskRouter);
+app.use("/api/v1/notifications", notificationRouter);
+app.use("/api/v1/dashboard", dashboardRouter);
 
 app.use(ErrorHandler);
 
