@@ -1,15 +1,18 @@
 import { Router } from "express";
-import { TaskController } from "../controllers/Task.controller";
+import { assignedToMe, create, createdByMe, getAll, overdue, update,  } from "../controllers/Task.controller";
+import { authenticate } from "../middlewares/auth.middleware";
 
 const router = Router();
 
-router.post("/", TaskController.create);
-router.get("/", TaskController.getAll);
-router.patch("/:id", TaskController.update);
-router.delete("/:id", TaskController.delete);
+router.use(authenticate);
 
-router.get("/me/assigned", TaskController.assignedToMe);
-router.get("/me/created", TaskController.createdByMe);
-router.get("/overdue", TaskController.overdue);
+router.post("/", create);
+router.get("/", getAll);
+router.patch("/:id", update);
+// router.delete("/:id", delete);
+
+router.get("/me/assigned", assignedToMe);
+router.get("/me/created", createdByMe);
+router.get("/overdue", overdue);
 
 export default router;

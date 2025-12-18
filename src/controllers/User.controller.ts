@@ -8,7 +8,7 @@ export const getUser = async (
   next: NextFunction
 ) => {
   try {
-    const userId = req.user.id; 
+    const userId = req.user!.id;
 
     const result = await getUserById(userId);
     return res.status(200).json(result);
@@ -23,7 +23,7 @@ export const updateUser = async (
   next: NextFunction
 ) => {
   try {
-    const userId = req.user.id; 
+    const userId = req.user!.id;
     const body: UpdateUserDto = req.body;
 
     const result = await updateUserById(userId, body);

@@ -1,12 +1,15 @@
 import { Router } from "express";
-import { getUser, updateUser } from "../controllers/User.controller";
 import { authenticate } from "../middlewares/auth.middleware";
+import {
+  getUnread,
+  markRead,
+} from "../controllers/Notification.controller";
 
 const router = Router();
 
 router.use(authenticate);
 
-router.get("/me", getUser);
-router.put("/me", updateUser);
+router.get("/unread", getUnread);
+router.patch("/:id/read", markRead);
 
 export default router;

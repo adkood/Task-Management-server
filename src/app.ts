@@ -4,6 +4,7 @@ dotenv.config();
 import express from "express";
 import cors from "cors";
 import http from "http";
+import cookieParser from "cookie-parser";
 
 import { AppDataSource } from "./data-source";
 import { ErrorHandler } from "./middlewares/error.middleware";
@@ -18,6 +19,7 @@ const server = http.createServer(app);
 // Initialize socket
 initSocket(server);
 
+app.use(cookieParser());
 app.use(express.json());
 app.use(
   cors({

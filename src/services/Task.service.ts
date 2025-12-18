@@ -2,96 +2,107 @@ import { AppDataSource } from "../data-source";
 import { Task } from "../entities/Task";
 import { CreateTaskDto, UpdateTaskDto } from "../dtos/Task.dto";
 import { getIO } from "../socket";
+import { createNotification } from "./Notification.service";
+import { HttpError } from "../utils/HttpError";
 
-export class TaskService {
-  private taskRepo = AppDataSource.getRepository(Task);
+const taskRepo = AppDataSource.getRepository(Task);
 
-  async createTask(dto: CreateTaskDto, creatorId: string) {
-    const task = this.taskRepo.create({
-      ...dto,
-      creatorId,
-      dueDate: new Date(dto.dueDate),
-    });
+export const createTask = async (
+  dto: CreateTaskDto,
+  creatorId: string
+) => {
+  const task = taskRepo.create({
+    ...dto,
+    creatorId,
+    dueDate: new Date(dto.dueDate),
+  });
 
-    await this.taskRepo.save(task);
+  await taskRepo.save(task);
+  return task;
+};
 
-    return task;
+export const updateTask = async (
+  taskId: string,
+  dto: UpdateTaskDto
+) => {
+  const task = await taskRepo.findOneBy({ id: taskId });
+
+  if (!task) {
+    throw new HttpError(404, "Task not found");
   }
 
-  async updateTask(taskId: string, dto: UpdateTaskDto) {
-    const task = await this.taskRepo.findOneBy({ id: taskId });
+  const oldAssignee = task.assignedToId;
 
-    if (!task) throw new Error("Task not found");
+  Object.assign(task, {
+    ...dto,
+    ...(dto.dueDate && { dueDate: new Date(dto.dueDate) }),
+  });
 
-    const oldAssignee = task.assignedToId;
+  await taskRepo.save(task);
 
-    Object.assign(task, {
-      ...dto,
-      ...(dto.dueDate && { dueDate: new Date(dto.dueDate) }),
-    });
+  const io = getIO();
+  io.emit("task:updated", task);
 
-    await this.taskRepo.save(task);
-
-    const io = getIO();
-
-    io.emit("task:updated", task);
-
-    if (dto.assignedToId && dto.assignedToId !== oldAssignee) {
-      io.to(`user:${dto.assignedToId}`).emit("task:assigned", {
+  // Assignment notification
+  if (dto.assignedToId && dto.assignedToId !== oldAssignee) {
+    await createNotification(
+      dto.assignedToId,
+      "TASK_ASSIGNED",
+      {
         taskId: task.id,
         title: task.title,
-      });
-    }
-
-    return task;
+      }
+    );
   }
 
-  async deleteTask(taskId: string) {
-    await this.taskRepo.delete(taskId);
+  return task;
+};
+
+export const deleteTask = async (taskId: string) => {
+  await taskRepo.delete(taskId);
+};
+
+export const getTasks = async (filters: {
+  status?: string;
+  priority?: string;
+  sort?: "ASC" | "DESC";
+}) => {
+  const qb = taskRepo.createQueryBuilder("task");
+
+  if (filters.status) {
+    qb.andWhere("task.status = :status", { status: filters.status });
   }
 
-  async getTasks(filters: {
-    status?: string;
-    priority?: string;
-    sort?: "ASC" | "DESC";
-  }) {
-    const qb = this.taskRepo.createQueryBuilder("task");
-
-    if (filters.status) {
-      qb.andWhere("task.status = :status", { status: filters.status });
-    }
-
-    if (filters.priority) {
-      qb.andWhere("task.priority = :priority", {
-        priority: filters.priority,
-      });
-    }
-
-    if (filters.sort) {
-      qb.orderBy("task.dueDate", filters.sort);
-    }
-
-    return qb.getMany();
-  }
-
-  async getAssignedToUser(userId: string) {
-    return this.taskRepo.find({
-      where: { assignedToId: userId },
-      order: { dueDate: "ASC" },
+  if (filters.priority) {
+    qb.andWhere("task.priority = :priority", {
+      priority: filters.priority,
     });
   }
 
-  async getCreatedByUser(userId: string) {
-    return this.taskRepo.find({
-      where: { creatorId: userId },
-    });
+  if (filters.sort) {
+    qb.orderBy("task.dueDate", filters.sort);
   }
 
-  async getOverdueTasks() {
-    return this.taskRepo
-      .createQueryBuilder("task")
-      .where("task.dueDate < NOW()")
-      .andWhere("task.status != 'Completed'")
-      .getMany();
-  }
-}
+  return qb.getMany();
+};
+
+export const getAssignedToUser = async (userId: string) => {
+  return taskRepo.find({
+    where: { assignedToId: userId },
+    order: { dueDate: "ASC" },
+  });
+};
+
+export const getCreatedByUser = async (userId: string) => {
+  return taskRepo.find({
+    where: { creatorId: userId },
+  });
+};
+
+export const getOverdueTasks = async () => {
+  return taskRepo
+    .createQueryBuilder("task")
+    .where("task.dueDate < NOW()")
+    .andWhere("task.status != 'Completed'")
+    .getMany();
+};

@@ -1,6 +1,11 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+} from "typeorm";
 
-@Entity("notifications")
+@Entity()
 export class Notification {
   @PrimaryGeneratedColumn("uuid")
   id!: string;
@@ -9,14 +14,17 @@ export class Notification {
   userId!: string;
 
   @Column()
-  message!: string;
+  type!: "TASK_ASSIGNED" | "TASK_UPDATED";
+
+  @Column({ type: "jsonb" })
+  payload!: {
+    taskId: string;
+    title: string;
+  };
 
   @Column({ default: false })
   isRead!: boolean;
 
   @CreateDateColumn()
   createdAt!: Date;
-
-  @UpdateDateColumn()
-  updatedAt!: Date;
 }
