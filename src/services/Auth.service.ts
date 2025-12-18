@@ -4,18 +4,15 @@ import { SignupDto } from "../dtos/Signup.dto";
 import { User } from "../entities/User";
 import { HttpError } from "../utils/HttpError";
 import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
 import { generateAccessToken } from "../utils/Jwt";
 
 export const registerUser = async (data: SignupDto) => {
     try {
 
-        const { name, username, password } = data;
-        
-        console.log(name, username, password);
-        
-        if(name == null || username == null || password == null) {
-            throw new HttpError(400, "name, username or password is missing");
+        const { name, bio, username, password } = data;
+                
+        if(name == null || bio == null || username == null || password == null) {
+            throw new HttpError(400, "name, bio, username or password is missing");
         }
         
         const userRepo = AppDataSource.getRepository(User);
@@ -30,6 +27,7 @@ export const registerUser = async (data: SignupDto) => {
 
         const newUser = userRepo.create({
             name,
+            bio,
             username,
             password: hashedPassword,
         });
@@ -53,15 +51,6 @@ export const registerUser = async (data: SignupDto) => {
         throw new HttpError(500, "Something went wrong");
     }
 }
-
-const JWT_SECRET = process.env.JWT_SECRET;
-
-// const generateToken = (id: string) => {
-//     if(JWT_SECRET == null) {
-//         throw new HttpError(400, "JWT SECRET is missing");
-//     }
-//     return jwt.sign({ id }, JWT_SECRET, { expiresIn: "1d" });
-// }
 
 export const loginUser = async (data: LoginDto) => {
     try {
@@ -92,7 +81,8 @@ export const loginUser = async (data: LoginDto) => {
             status: "success", 
             message: "User logged in",
             data: {
-                user
+                user,
+                token
             }
         }
     } catch(error) {

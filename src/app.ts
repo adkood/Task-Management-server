@@ -7,7 +7,9 @@ import http from "http";
 
 import { AppDataSource } from "./data-source";
 import { ErrorHandler } from "./middlewares/error.middleware";
+import authRouter from "./routes/Auth.routes";
 import userRouter from "./routes/User.routes";
+
 import { initSocket } from "./socket";
 
 const app = express();
@@ -32,10 +34,12 @@ app.get("/ping", (_, res) => {
   res.json({ success: true, message: "pong" });
 });
 
+app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/users", userRouter);
+
 app.use(ErrorHandler);
 
-const port = process.env.PORT || 8080;
+const port = process.env.PORT || 5000;
 
 server.listen(port, () => {
   console.log(`Server running on port ${port}`);
