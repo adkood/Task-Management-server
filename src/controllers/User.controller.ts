@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from "express";
-import { getUserById, updateUserById } from "../services/User.service";
+import { getUserById, updateUserById, getAllUsers } from "../services/User.service";
 import { UpdateUserDto } from "../dtos/User.dto";
 
 export const getUser = async (
@@ -27,6 +27,19 @@ export const updateUser = async (
     const body: UpdateUserDto = req.body;
 
     const result = await updateUserById(userId, body);
+    return res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const fetchAllUsers = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const result = await getAllUsers();
     return res.status(200).json(result);
   } catch (error) {
     next(error);

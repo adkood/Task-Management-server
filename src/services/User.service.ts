@@ -79,3 +79,17 @@ export const updateUserById = async (
     throw new HttpError(500, "Something went wrong");
   }
 };
+
+export const getAllUsers = async () => {
+  const userRepo = AppDataSource.getRepository(User);
+  const users = await userRepo.find({
+    select: ['id', 'name', 'username', 'bio', 'createdAt'],
+  });
+  return {
+    status: "success",
+    message: "User updated successfully",
+    data: {
+      users,
+    },
+  }
+};
