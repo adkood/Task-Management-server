@@ -1,6 +1,8 @@
+// services/Notification.service.ts
 import { AppDataSource } from "../data-source";
 import { Notification } from "../entities/Notification";
 import { getIO } from "../socket";
+import { HttpError } from "../utils/HttpError";
 
 const notificationRepo = AppDataSource.getRepository(Notification);
 
@@ -24,14 +26,18 @@ export const createNotification = async (
   const io = getIO();
   io.to(`user:${userId}`).emit("notification:new", notification);
 
-  return notification;
+  // Return data only
+  return { notification };
 };
 
 export const getUnreadNotifications = async (userId: string) => {
-  return notificationRepo.find({
+  const notifications = await notificationRepo.find({
     where: { userId, isRead: false },
     order: { createdAt: "DESC" },
   });
+
+  // Return data only
+  return { notifications };
 };
 
 export const markNotificationAsRead = async (
@@ -44,19 +50,22 @@ export const markNotificationAsRead = async (
   });
 
   if (!notification) {
-    throw new Error("Notification not found");
+    throw new HttpError(404, "Notification not found");
   }
 
   notification.isRead = true;
   await notificationRepo.save(notification);
 
-  return notification;
+  // Return data only
+  return { notification };
 };
-
 
 export const markAllRead = async (userId: string) => {
   await notificationRepo.update(
     { userId, isRead: false },
     { isRead: true }
   );
+
+  // Return data only (success indicator)
+  return { success: true };
 };

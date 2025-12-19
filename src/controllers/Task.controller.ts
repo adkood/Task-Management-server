@@ -1,4 +1,4 @@
-// controllers/Task.controller.ts - Update all functions to use AuthenticatedRequest
+// controllers/Task.controller.ts
 import { Request, Response } from "express";
 import { validate } from "class-validator";
 import { CreateTaskDto, UpdateTaskDto } from "../dtos/Task.dto";
@@ -11,37 +11,117 @@ import {
   getCreatedByUser,
   getOverdueTasks,
 } from "../services/Task.service";
+import { HttpError } from "../utils/HttpError";
 
-export const create = async (req: Request, res: Response) => {
-  const dto = Object.assign(new CreateTaskDto(), req.body);
-  const errors = await validate(dto);
+// Add this interface if not already defined elsewhere
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string;
+    username: string;
+  };
+}
 
-  if (errors.length) {
-    return res.status(400).json({ errors });
+export const create = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const dto = Object.assign(new CreateTaskDto(), req.body);
+    const errors = await validate(dto);
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        status: "error",
+        message: "Validation failed",
+        data: { errors }
+      });
+    }
+
+    const data = await createTask(dto, req.user!.id);
+
+    return res.status(201).json({
+      status: "success",
+      message: "Task created successfully",
+      data: data
+    });
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return res.status(error.statusCode).json({
+        status: "error",
+        message: error.message,
+        data: null
+      });
+    }
+
+    return res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+      data: null
+    });
   }
-
-  const task = await createTask(dto, req.user!.id);
-  return res.status(201).json(task);
 };
 
-export const update = async (req: Request, res: Response) => {
-  const dto = Object.assign(new UpdateTaskDto(), req.body);
-  const errors = await validate(dto);
+export const update = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const dto = Object.assign(new UpdateTaskDto(), req.body);
+    const errors = await validate(dto);
 
-  if (errors.length) {
-    return res.status(400).json({ errors });
+    if (errors.length > 0) {
+      return res.status(400).json({
+        status: "error",
+        message: "Validation failed",
+        data: { errors }
+      });
+    }
+
+    const data = await updateTask(req.params.id, dto, req.user!.id);
+
+    return res.status(200).json({
+      status: "success",
+      message: "Task updated successfully",
+      data: data
+    });
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return res.status(error.statusCode).json({
+        status: "error",
+        message: error.message,
+        data: null
+      });
+    }
+
+    return res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+      data: null
+    });
   }
-
-  const task = await updateTask(req.params.id, dto, req.user!.id);
-  return res.json(task);
 };
 
-export const remove = async (req: Request, res: Response) => {
-  await deleteTask(req.params.id, req.user!.id);
-  return res.status(204).send();
+export const remove = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const data = await deleteTask(req.params.id, req.user!.id);
+
+    return res.status(200).json({
+      status: "success",
+      message: "Task deleted successfully",
+      data: data
+    });
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return res.status(error.statusCode).json({
+        status: "error",
+        message: error.message,
+        data: null
+      });
+    }
+
+    return res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+      data: null
+    });
+  }
 };
 
-export const getAll = async (req: Request, res: Response) => {
+export const getAll = async (req: AuthenticatedRequest, res: Response) => {
   try {
     // Parse query parameters
     const filters = {
@@ -54,11 +134,12 @@ export const getAll = async (req: Request, res: Response) => {
       search: req.query.search as string,
     };
 
-    const tasks = await getTasks(filters);
-    
-    return res.json({
+    const data = await getTasks(filters);
+
+    return res.status(200).json({
       status: "success",
-      data: tasks,
+      message: "Tasks fetched successfully",
+      data: data,
       filters: {
         applied: {
           status: filters.status,
@@ -70,32 +151,97 @@ export const getAll = async (req: Request, res: Response) => {
         },
       },
     });
-  } catch (error: any) {
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return res.status(error.statusCode).json({
+        status: "error",
+        message: error.message,
+        data: null
+      });
+    }
+
     return res.status(500).json({
       status: "error",
-      message: error.message || "Failed to fetch tasks",
+      message: "Internal server error",
+      data: null
     });
   }
 };
 
-export const assignedToMe = async (
-  req: Request,
-  res: Response
-) => {
-  const tasks = await getAssignedToUser(req.user!.id);
-  return res.json(tasks);
+export const assignedToMe = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const data = await getAssignedToUser(req.user!.id);
+
+    return res.status(200).json({
+      status: "success",
+      message: "Assigned tasks fetched successfully",
+      data: data
+    });
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return res.status(error.statusCode).json({
+        status: "error",
+        message: error.message,
+        data: null
+      });
+    }
+
+    return res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+      data: null
+    });
+  }
 };
 
-export const createdByMe = async (
-  req: Request,
-  res: Response
-) => {
-  const tasks = await getCreatedByUser(req.user!.id);
-  return res.json(tasks);
+export const createdByMe = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const data = await getCreatedByUser(req.user!.id);
+
+    return res.status(200).json({
+      status: "success",
+      message: "Created tasks fetched successfully",
+      data: data
+    });
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return res.status(error.statusCode).json({
+        status: "error",
+        message: error.message,
+        data: null
+      });
+    }
+
+    return res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+      data: null
+    });
+  }
 };
 
-export const overdue = async (req: Request, res: Response) => {
-  // Make overdue tasks user-specific
-  const tasks = await getOverdueTasks(req.user!.id);
-  return res.json(tasks);
+export const overdue = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const data = await getOverdueTasks(req.user!.id);
+
+    return res.status(200).json({
+      status: "success",
+      message: "Overdue tasks fetched successfully",
+      data: data
+    });
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return res.status(error.statusCode).json({
+        status: "error",
+        message: error.message,
+        data: null
+      });
+    }
+
+    return res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+      data: null
+    });
+  }
 };

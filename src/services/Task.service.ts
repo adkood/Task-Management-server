@@ -1,4 +1,4 @@
-// services/Task.service.ts - Updated with simplified socket implementation
+// services/Task.service.ts
 import { AppDataSource } from "../data-source";
 import { Task } from "../entities/Task";
 import { User } from "../entities/User";
@@ -12,10 +12,7 @@ import { TaskPriority } from "../enums/TaskPriority";
 const taskRepo = AppDataSource.getRepository(Task);
 const userRepo = AppDataSource.getRepository(User);
 
-export const createTask = async (
-  dto: CreateTaskDto,
-  creatorId: string
-) => {
+export const createTask = async (dto: CreateTaskDto, creatorId: string) => {
   // Validate assigned user exists
   if (!dto.assignedToId) {
     throw new HttpError(400, "Task must be assigned to a User");
@@ -81,14 +78,11 @@ export const createTask = async (
     });
   }
 
-  return taskWithRelations || task;
+  // Return data only
+  return { task: taskWithRelations || task };
 };
 
-export const updateTask = async (
-  taskId: string,
-  dto: UpdateTaskDto,
-  userId: string
-) => {
+export const updateTask = async (taskId: string, dto: UpdateTaskDto, userId: string) => {
   const task = await taskRepo.findOne({
     where: { id: taskId },
     relations: ["creator", "assignedTo"]
@@ -165,12 +159,11 @@ export const updateTask = async (
     });
   }
 
-  // Optional: Notify on status/priority changes (not required but good UX)
+  // Optional: Notify on status/priority changes
   const statusChanged = dto.status && dto.status !== oldStatus;
   const priorityChanged = dto.priority && dto.priority !== oldPriority;
   
   if ((statusChanged || priorityChanged) && task.assignedToId && task.assignedToId !== userId) {
-    // Notify assignee about status/priority changes
     await createNotification(
       task.assignedToId,
       "TASK_UPDATED",
@@ -181,7 +174,8 @@ export const updateTask = async (
     );
   }
 
-  return updatedTask || task;
+  // Return data only
+  return { task: updatedTask || task };
 };
 
 export const deleteTask = async (taskId: string, userId: string) => {
@@ -208,7 +202,8 @@ export const deleteTask = async (taskId: string, userId: string) => {
     deletedBy: userId 
   });
 
-  return true;
+  // Return data only (success indication)
+  return { success: true };
 };
 
 export const getTasks = async (filters: {
@@ -266,22 +261,29 @@ export const getTasks = async (filters: {
   const sortOrder = filters.sort || "ASC";
   qb.orderBy("task.dueDate", sortOrder);
 
-  return qb.getMany();
+  const tasks = await qb.getMany();
+  return { tasks }; 
 };
 
 export const getAssignedToUser = async (userId: string) => {
-  return taskRepo.find({
+  const tasks = await taskRepo.find({
     where: { assignedToId: userId },
     relations: ["creator", "assignedTo"],
     order: { dueDate: "ASC" },
   });
+  
+  // Return data only
+  return { tasks };
 };
 
 export const getCreatedByUser = async (userId: string) => {
-  return taskRepo.find({
+  const tasks = await taskRepo.find({
     where: { creatorId: userId },
     relations: ["creator", "assignedTo"],
   });
+  
+  // Return data only
+  return { tasks }; 
 };
 
 export const getOverdueTasks = async (userId?: string) => {
@@ -301,5 +303,8 @@ export const getOverdueTasks = async (userId?: string) => {
     });
   }
 
-  return qb.getMany();
+  const tasks = await qb.getMany();
+  
+  // Return data only
+  return { tasks }; 
 };
