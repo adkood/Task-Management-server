@@ -1,7 +1,7 @@
 // controllers/Notification.controller.ts
 import { Response, Request } from "express";
 import {
-  getUnreadNotifications,
+  getAllNotifications,
   markAllRead,
   markNotificationAsRead,
 } from "../services/Notification.service";
@@ -15,7 +15,7 @@ interface AuthenticatedRequest extends Request {
   };
 }
 
-export const getUnread = async (req: AuthenticatedRequest, res: Response) => {
+export const getAll = async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({
@@ -25,7 +25,7 @@ export const getUnread = async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    const data = await getUnreadNotifications(req.user.id);
+    const data = await getAllNotifications(req.user.id);
 
     return res.status(200).json({
       status: "success",

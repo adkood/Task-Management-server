@@ -30,9 +30,9 @@ export const createNotification = async (
   return { notification };
 };
 
-export const getUnreadNotifications = async (userId: string) => {
+export const getAllNotifications = async (userId: string) => {
   const notifications = await notificationRepo.find({
-    where: { userId, isRead: false },
+    where: { userId },
     order: { createdAt: "DESC" },
   });
 
