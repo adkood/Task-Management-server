@@ -1,4 +1,3 @@
-// services/Task.service.ts
 import { AppDataSource } from "../data-source";
 import { Task } from "../entities/Task";
 import { User } from "../entities/User";
@@ -8,6 +7,7 @@ import { createNotification } from "./Notification.service";
 import { HttpError } from "../utils/HttpError";
 import { TaskStatus } from "../enums/TaskStatus";
 import { TaskPriority } from "../enums/TaskPriority";
+import { In } from "typeorm";
 
 const taskRepo = AppDataSource.getRepository(Task);
 const userRepo = AppDataSource.getRepository(User);
@@ -92,26 +92,51 @@ export const updateTask = async (taskId: string, dto: UpdateTaskDto, userId: str
     throw new HttpError(404, "Task not found");
   }
 
-  // Authorization: Only creator or assignee can update
-  const canUpdate = task.creatorId === userId || task.assignedToId === userId;
-  if (!canUpdate) {
+  // FEATURE 1: Enhanced permission logic
+  const isCreator = task.creatorId === userId;
+  const isAssignee = task.assignedToId === userId;
+  
+  // Only creator or assignee can update
+  if (!isCreator && !isAssignee) {
     throw new HttpError(403, "Not authorized to update this task");
+  }
+
+  // If user is NOT the creator, they can only update status
+  if (!isCreator) {
+    // Check if user is trying to update anything other than status
+    const nonStatusUpdates = ['title', 'description', 'priority', 'assignedToId', 'dueDate'];
+    const hasNonStatusUpdate = nonStatusUpdates.some(field => dto[field as keyof UpdateTaskDto] !== undefined);
+    
+    if (hasNonStatusUpdate) {
+      throw new HttpError(403, "Only the task creator can update title, description, priority, assignee, or due date");
+    }
+    
+    // Only allow status update for assignees
+    if (dto.status === undefined) {
+      throw new HttpError(403, "Assigned users can only update task status");
+    }
   }
 
   const oldAssignee = task.assignedToId;
   const oldStatus = task.status;
   const oldPriority = task.priority;
 
-  // Validate assigned user exists if changing
+  // Validate assigned user exists if changing (only creator can change)
   if (dto.assignedToId && dto.assignedToId !== task.assignedToId) {
+    if (!isCreator) {
+      throw new HttpError(403, "Only task creator can change assignee");
+    }
     const assignedUser = await userRepo.findOneBy({ id: dto.assignedToId });
     if (!assignedUser) {
       throw new HttpError(404, "Assigned user not found");
     }
   }
 
-  // Validate due date is in the future if changing
+  // Validate due date is in the future if changing (only creator can change)
   if (dto.dueDate) {
+    if (!isCreator) {
+      throw new HttpError(403, "Only task creator can change due date");
+    }
     const dueDate = new Date(dto.dueDate);
     if (dueDate <= new Date()) {
       throw new HttpError(400, "Due date must be in the future");
@@ -119,12 +144,28 @@ export const updateTask = async (taskId: string, dto: UpdateTaskDto, userId: str
     task.dueDate = dueDate;
   }
 
-  // Update only provided fields
-  if (dto.title !== undefined) task.title = dto.title;
-  if (dto.description !== undefined) task.description = dto.description;
-  if (dto.status !== undefined) task.status = dto.status;
-  if (dto.priority !== undefined) task.priority = dto.priority;
+  // Update only provided fields with permission checks
+  if (dto.title !== undefined) {
+    if (!isCreator) throw new HttpError(403, "Only creator can update title");
+    task.title = dto.title;
+  }
+  
+  if (dto.description !== undefined) {
+    if (!isCreator) throw new HttpError(403, "Only creator can update description");
+    task.description = dto.description;
+  }
+  
+  if (dto.status !== undefined) {
+    task.status = dto.status;
+  }
+  
+  if (dto.priority !== undefined) {
+    if (!isCreator) throw new HttpError(403, "Only creator can update priority");
+    task.priority = dto.priority;
+  }
+  
   if (dto.assignedToId !== undefined) {
+    if (!isCreator) throw new HttpError(403, "Only creator can change assignee");
     task.assignedToId = dto.assignedToId;
   }
 
@@ -178,6 +219,7 @@ export const updateTask = async (taskId: string, dto: UpdateTaskDto, userId: str
   return { task: updatedTask || task };
 };
 
+// FEATURE 4: Delete task (already implemented)
 export const deleteTask = async (taskId: string, userId: string) => {
   const task = await taskRepo.findOne({
     where: { id: taskId },
@@ -206,6 +248,7 @@ export const deleteTask = async (taskId: string, userId: string) => {
   return { success: true };
 };
 
+// FEATURE 3: Pagination for tasks
 export const getTasks = async (filters: {
   status?: string;
   priority?: string;
@@ -214,7 +257,13 @@ export const getTasks = async (filters: {
   assignedToMe?: boolean;
   createdByMe?: boolean;
   search?: string;
+  page?: number;
+  limit?: number;
 }) => {
+  const page = filters.page || 1;
+  const limit = filters.limit || 10;
+  const skip = (page - 1) * limit;
+
   const qb = taskRepo.createQueryBuilder("task")
     .leftJoinAndSelect("task.creator", "creator")
     .leftJoinAndSelect("task.assignedTo", "assignedTo");
@@ -261,32 +310,102 @@ export const getTasks = async (filters: {
   const sortOrder = filters.sort || "ASC";
   qb.orderBy("task.dueDate", sortOrder);
 
+  // Get total count for pagination
+  const total = await qb.getCount();
+  
+  // Apply pagination
+  qb.skip(skip).take(limit);
+
   const tasks = await qb.getMany();
-  return { tasks }; 
+  
+  return { 
+    tasks,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      hasNext: page < Math.ceil(total / limit),
+      hasPrev: page > 1
+    }
+  }; 
 };
 
-export const getAssignedToUser = async (userId: string) => {
-  const tasks = await taskRepo.find({
+export const getAssignedToUser = async (userId: string, page: number = 1, limit: number = 10) => {
+  const skip = (page - 1) * limit;
+  
+  const [tasks, total] = await taskRepo.findAndCount({
     where: { assignedToId: userId },
     relations: ["creator", "assignedTo"],
     order: { dueDate: "ASC" },
+    skip,
+    take: limit,
   });
   
-  // Return data only
-  return { tasks };
+  // Return data only with pagination
+  return { 
+    tasks,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit)
+    }
+  };
 };
 
-export const getCreatedByUser = async (userId: string) => {
-  const tasks = await taskRepo.find({
+export const getCreatedByUser = async (userId: string, page: number = 1, limit: number = 10) => {
+  const skip = (page - 1) * limit;
+  
+  const [tasks, total] = await taskRepo.findAndCount({
     where: { creatorId: userId },
     relations: ["creator", "assignedTo"],
+    order: { dueDate: "DESC" },
+    skip,
+    take: limit,
   });
   
-  // Return data only
-  return { tasks }; 
+  // Return data only with pagination
+  return { 
+    tasks,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit)
+    }
+  }; 
 };
 
-export const getOverdueTasks = async (userId?: string) => {
+export const getUrgentTasks = async (userId: string, page: number = 1, limit: number = 10) => {
+  const skip = (page - 1) * limit;
+  
+  const [tasks, total] = await taskRepo.findAndCount({
+    where: [
+      { creatorId: userId, priority: TaskPriority.URGENT },
+      { assignedTo: { id: userId }, priority: TaskPriority.URGENT }
+    ],
+    relations: ["creator", "assignedTo"],
+    order: { dueDate: "DESC" },
+    skip,
+    take: limit,
+  });
+  
+  // Return data only with pagination
+  return { 
+    tasks,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit)
+    }
+  }; 
+};
+
+export const getOverdueTasks = async (userId?: string, page: number = 1, limit: number = 10) => {
+  const skip = (page - 1) * limit;
+  
   const qb = taskRepo
     .createQueryBuilder("task")
     .where("task.dueDate < NOW()")
@@ -303,8 +422,22 @@ export const getOverdueTasks = async (userId?: string) => {
     });
   }
 
+  // Get total count
+  const total = await qb.getCount();
+  
+  // Apply pagination
+  qb.skip(skip).take(limit);
+  
   const tasks = await qb.getMany();
   
-  // Return data only
-  return { tasks }; 
+  // Return data only with pagination
+  return { 
+    tasks,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit)
+    }
+  }; 
 };

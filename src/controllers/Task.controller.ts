@@ -1,4 +1,3 @@
-// controllers/Task.controller.ts
 import { Request, Response } from "express";
 import { validate } from "class-validator";
 import { CreateTaskDto, UpdateTaskDto } from "../dtos/Task.dto";
@@ -121,9 +120,13 @@ export const remove = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
+// FEATURE 3: Updated getAll with pagination
 export const getAll = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    // Parse query parameters
+    // Parse query parameters with pagination
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    
     const filters = {
       status: req.query.status as string,
       priority: req.query.priority as string,
@@ -132,6 +135,8 @@ export const getAll = async (req: AuthenticatedRequest, res: Response) => {
       assignedToMe: req.query.assignedToMe === "true",
       createdByMe: req.query.createdByMe === "true",
       search: req.query.search as string,
+      page,
+      limit,
     };
 
     const data = await getTasks(filters);
@@ -148,6 +153,8 @@ export const getAll = async (req: AuthenticatedRequest, res: Response) => {
           assignedToMe: filters.assignedToMe,
           createdByMe: filters.createdByMe,
           search: filters.search,
+          page: filters.page,
+          limit: filters.limit,
         },
       },
     });
@@ -168,9 +175,13 @@ export const getAll = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
+// Updated with pagination
 export const assignedToMe = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const data = await getAssignedToUser(req.user!.id);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    
+    const data = await getAssignedToUser(req.user!.id, page, limit);
 
     return res.status(200).json({
       status: "success",
@@ -194,14 +205,19 @@ export const assignedToMe = async (req: AuthenticatedRequest, res: Response) => 
   }
 };
 
+// Updated with pagination
 export const createdByMe = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const data = await getCreatedByUser(req.user!.id);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    
+    const data = await getCreatedByUser(req.user!.id, page, limit);
 
     return res.status(200).json({
       status: "success",
       message: "Created tasks fetched successfully",
-      data: data
+      data: data.tasks,
+      pagination: data.pagination
     });
   } catch (error) {
     if (error instanceof HttpError) {
@@ -220,9 +236,13 @@ export const createdByMe = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
+// Updated with pagination
 export const overdue = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const data = await getOverdueTasks(req.user!.id);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    
+    const data = await getOverdueTasks(req.user!.id, page, limit);
 
     return res.status(200).json({
       status: "success",

@@ -4,6 +4,7 @@ import {
   getAssignedToUser,
   getCreatedByUser,
   getOverdueTasks,
+  getUrgentTasks
 } from "../services/Task.service";
 import { HttpError } from "../utils/HttpError";
 
@@ -25,17 +26,20 @@ export const getDashboard = async (
     const [
       assignedResult,
       createdResult, 
-      overdueResult
+      overdueResult,
+      urgentResult,
     ] = await Promise.all([
-      getAssignedToUser(userId),    // returns { tasks: [...] }
-      getCreatedByUser(userId),     // returns { tasks: [...] }
-      getOverdueTasks(userId),      // returns { tasks: [...] }
+      getAssignedToUser(userId),    
+      getCreatedByUser(userId),     
+      getOverdueTasks(userId),      
+      getUrgentTasks(userId),
     ]);
 
     // Extract tasks from each result
     const assignedTasks = assignedResult.tasks;
     const createdTasks = createdResult.tasks;
     const overdueTasks = overdueResult.tasks;
+    const urgentTasks = urgentResult.tasks;
 
     return res.status(200).json({
       status: "success",
@@ -44,10 +48,12 @@ export const getDashboard = async (
         assignedTasks,
         createdTasks,
         overdueTasks,
+        urgentTasks,
         summary: {
           assignedCount: assignedTasks.length,
           createdCount: createdTasks.length,
           overdueCount: overdueTasks.length,
+          urgentCount: urgentTasks.length,
         },
       },
     });
