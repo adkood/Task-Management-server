@@ -10,7 +10,7 @@ const router = Router();
 
 router.use(authenticate);
 
-router.get("/unread", getAll);
+router.get("/", getAll);
 router.patch("/:id/read", markRead);
 router.post("/read-all", readAll);
 
