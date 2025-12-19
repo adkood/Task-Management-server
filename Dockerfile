@@ -3,7 +3,11 @@ FROM node:20-alpine
 WORKDIR /app
 
 COPY package*.json ./
-# Install ALL dependencies (including devDependencies like ts-node)
+
+# First install ts-node and typescript globally
+RUN npm install -g ts-node typescript
+
+# Then install all project dependencies
 RUN npm install --include=dev
 
 COPY . .
