@@ -3,8 +3,8 @@ import { authenticate } from "../middlewares/auth.middleware";
 import {
   getUnread,
   markRead,
+  readAll
 } from "../controllers/Notification.controller";
-import { markAllRead } from "../services/Notification.service";
 
 const router = Router();
 
@@ -12,6 +12,6 @@ router.use(authenticate);
 
 router.get("/unread", getUnread);
 router.patch("/:id/read", markRead);
-router.post("/read-all", markAllRead);
+router.post("/read-all", readAll);
 
 export default router;

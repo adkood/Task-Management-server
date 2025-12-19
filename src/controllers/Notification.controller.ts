@@ -83,7 +83,7 @@ export const markRead = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const markAllReadController = async (
+export const readAll = async (
   req: AuthenticatedRequest,
   res: Response
 ) => {
