@@ -1,4 +1,3 @@
-// services/User.service.ts
 import { AppDataSource } from "../data-source";
 import { User } from "../entities/User";
 import { HttpError } from "../utils/HttpError";
@@ -20,7 +19,6 @@ export const getUserById = async (userId: string) => {
     throw new HttpError(404, "User not found");
   }
 
-  // Return data only
   return {
     user,
   };
@@ -49,10 +47,8 @@ export const updateUserById = async (userId: string, data: UpdateUserDto) => {
 
   await userRepo.save(user);
 
-  // Remove password from response
   const { password, ...userWithoutPassword } = user;
 
-  // Return data only
   return {
     user: userWithoutPassword,
   };
@@ -64,7 +60,6 @@ export const getAllUsers = async () => {
     select: ['id', 'name', 'username', 'bio', 'createdAt'],
   });
 
-  // Return data only
   return {
     users,
   };

@@ -8,8 +8,8 @@ const notificationRepo = AppDataSource.getRepository(Notification);
 export const createNotification = async (
   userId: string,
   type: "TASK_ASSIGNED" | "TASK_UPDATED",
-  payload: { 
-    taskId: string; 
+  payload: {
+    taskId: string;
     title: string;
     assignedBy?: string;
   }
@@ -25,47 +25,40 @@ export const createNotification = async (
   const io = getIO();
   io.to(`user:${userId}`).emit("notification:new", notification);
 
-  // Return data only
   return { notification };
 };
 
-// FEATURE 2: Enhanced notifications with pagination and unread count
 export const getAllNotifications = async (
-  userId: string, 
-  page: number = 1, 
+  userId: string,
+  page: number = 1,
   limit: number = 20,
   unreadOnly: boolean = false
 ) => {
   const skip = (page - 1) * limit;
-  
+
   const qb = notificationRepo.createQueryBuilder("notification")
     .where("notification.userId = :userId", { userId });
 
-  // Filter for unread only if requested
   if (unreadOnly) {
     qb.andWhere("notification.isRead = :isRead", { isRead: false });
   }
 
-  // Get total count and unread count
   const total = await qb.getCount();
-  
-  // Get unread count separately
+
   const unreadCount = await notificationRepo.count({
-    where: { 
-      userId, 
-      isRead: false 
+    where: {
+      userId,
+      isRead: false
     }
   });
 
-  // Apply pagination and sorting (latest first)
   qb.orderBy("notification.createdAt", "DESC")
     .skip(skip)
     .take(limit);
 
   const notifications = await qb.getMany();
 
-  // Return data with counts and pagination
-  return { 
+  return {
     notifications,
     counts: {
       total,
@@ -98,11 +91,10 @@ export const markNotificationAsRead = async (
   notification.isRead = true;
   await notificationRepo.save(notification);
 
-  // Emit update via socket
+  // Emiting update via socket
   const io = getIO();
   io.to(`user:${userId}`).emit("notification:read", { notificationId });
 
-  // Return data only
   return { notification };
 };
 
@@ -112,22 +104,20 @@ export const markAllRead = async (userId: string) => {
     { isRead: true }
   );
 
-  // Emit update via socket
+  // Emiting update via socket
   const io = getIO();
   io.to(`user:${userId}`).emit("notification:all-read");
 
-  // Return data only (success indicator)
   return { success: true };
 };
 
-// New: Get unread count only
 export const getUnreadCount = async (userId: string) => {
   const count = await notificationRepo.count({
-    where: { 
-      userId, 
-      isRead: false 
+    where: {
+      userId,
+      isRead: false
     }
   });
-  
+
   return { count };
 };

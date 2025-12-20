@@ -13,6 +13,7 @@ import userRouter from "./routes/User.routes";
 import taskRouter from "./routes/Task.routes";
 import notificationRouter from "./routes/Notification.routes";
 import dashboardRouter from "./routes/Dashboard.routes";
+import auditRouter from "./routes/AuditLog.routes";
 
 import { initSocket } from "./socket";
 
@@ -43,6 +44,7 @@ app.use("/api/v1/users", userRouter);
 app.use("/api/v1/tasks", taskRouter);
 app.use("/api/v1/notifications", notificationRouter);
 app.use("/api/v1/dashboard", dashboardRouter);
+app.use("/api/v1/audit", auditRouter);
 
 app.use(ErrorHandler);
 

@@ -1,4 +1,3 @@
-// services/Auth.service.ts
 import { AppDataSource } from "../data-source";
 import { LoginDto } from "../dtos/Login.dto";
 import { SignupDto } from "../dtos/Signup.dto";
@@ -32,10 +31,9 @@ export const registerUser = async (data: SignupDto) => {
 
   await userRepo.save(newUser);
 
-  // Remove password from response
+  // removing password from response
   const { password: _, ...userWithoutPassword } = newUser;
   
-  // Return data only
   return {
     user: userWithoutPassword
   };
@@ -63,10 +61,10 @@ export const loginUser = async (data: LoginDto) => {
 
   const token = generateAccessToken({ id: user.id, username: user.username });
 
-  // Remove password from response
+  // Removing password from response
   const { password: _, ...userWithoutPassword } = user;
 
-  // Return data only (token will be set in cookie by controller)
+  // token will be set in cookie by controller
   return {
     user: userWithoutPassword,
     token: token

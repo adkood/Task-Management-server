@@ -7,7 +7,6 @@ import {
 } from "../services/Notification.service";
 import { HttpError } from "../utils/HttpError";
 
-// Add this interface if not already defined
 interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
@@ -15,7 +14,6 @@ interface AuthenticatedRequest extends Request {
   };
 }
 
-// FEATURE 2: Updated with pagination and unread count
 export const getAll = async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user) {
@@ -54,7 +52,6 @@ export const getAll = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-// New endpoint: Get unread count only
 export const getUnread = async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user) {

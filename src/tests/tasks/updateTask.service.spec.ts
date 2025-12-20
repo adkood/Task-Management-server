@@ -58,9 +58,7 @@ describe("updateTask service", () => {
     jest.clearAllMocks();
   });
 
-  // -----------------------------
-  // TEST: Assignee updates status
-  // -----------------------------
+  // Assignee updates status
   it("should allow assignee to update status and create audit log", async () => {
     const task = {
       id: "task-1",
@@ -85,9 +83,7 @@ describe("updateTask service", () => {
     expect(queryRunner.commitTransaction).toHaveBeenCalled();
   });
 
-  // ----------------------------------
-  // TEST: Assignee cannot update title
-  // ----------------------------------
+  // Assignee cannot update title
   it("should block assignee updating non-status fields", async () => {
     const task = {
       id: "task-1",
@@ -110,9 +106,7 @@ describe("updateTask service", () => {
     expect(queryRunner.rollbackTransaction).toHaveBeenCalled();
   });
 
-  // ----------------------------------
-  // TEST: Status unchanged → no audit
-  // ----------------------------------
+  // Status unchanged
   it("should not create audit log if status is unchanged", async () => {
     const task = {
       id: "task-1",
@@ -134,9 +128,7 @@ describe("updateTask service", () => {
     expect(queryRunner.commitTransaction).toHaveBeenCalled();
   });
 
-  // ----------------------------------
-  // TEST: Unauthorized user
-  // ----------------------------------
+  // Unauthorized user
   it("should throw 403 for unauthorized user", async () => {
     taskRepo.findOne.mockResolvedValue({
       id: "task-1",

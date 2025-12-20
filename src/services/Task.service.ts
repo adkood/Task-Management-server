@@ -16,7 +16,7 @@ const userRepo = AppDataSource.getRepository(User);
 const taskStatusLogRepo = AppDataSource.getRepository(TaskStatusLog);
 
 export const createTask = async (dto: CreateTaskDto, creatorId: string) => {
-  // Validate assigned user exists
+
   if (!dto.assignedToId) {
     throw new HttpError(400, "Task must be assigned to a User");
   }
@@ -26,19 +26,16 @@ export const createTask = async (dto: CreateTaskDto, creatorId: string) => {
     throw new HttpError(404, "Assigned user not found");
   }
 
-  // Validate creator exists
   const creatorUser = await userRepo.findOneBy({ id: creatorId });
   if (!creatorUser) {
     throw new HttpError(404, "Creator user not found");
   }
 
-  // Validate due date is in the future
   const dueDate = new Date(dto.dueDate);
   if (dueDate <= new Date()) {
     throw new HttpError(400, "Due date must be in the future");
   }
 
-  // Create task with proper relationship handling
   const task = new Task();
   task.title = dto.title;
   task.description = dto.description || "";
@@ -52,17 +49,14 @@ export const createTask = async (dto: CreateTaskDto, creatorId: string) => {
 
   await taskRepo.save(task);
 
-  // Load the task with relations
   const taskWithRelations = await taskRepo.findOne({
     where: { id: task.id },
     relations: ["creator", "assignedTo"]
   });
 
-  // REQUIRED: Live update for all users viewing task list/dashboard
   const io = getIO();
   io.to("all-tasks").emit("task:created", taskWithRelations || task);
 
-  // REQUIRED: Assignment notification (persistent + instant)
   if (dto.assignedToId && dto.assignedToId !== creatorId) {
     await createNotification(
       dto.assignedToId,
@@ -73,15 +67,13 @@ export const createTask = async (dto: CreateTaskDto, creatorId: string) => {
         assignedBy: creatorId,
       }
     );
-    
-    // Also send immediate socket notification to the assignee
+
     io.to(`user:${dto.assignedToId}`).emit("task:assigned-to-you", {
       taskId: task.id,
       title: task.title,
     });
   }
 
-  // Return data only
   return { task: taskWithRelations || task };
 };
 
@@ -123,22 +115,30 @@ export const updateTask = async (
     const oldPriority = task.priority;
     const oldAssignee = task.assignedToId;
 
-    // -------------------------------
-    // PERMISSIONS
-    // -------------------------------
+    // assigned user is updating
     if (!isCreator) {
-      dto = { status: dto.status };
-      if (dto.status === undefined) {
+      const forbiddenChanges =
+        (dto.title !== undefined && dto.title !== task.title) ||
+        (dto.description !== undefined && dto.description !== task.description) ||
+        (dto.priority !== undefined && dto.priority !== task.priority) ||
+        (dto.dueDate !== undefined &&
+          new Date(dto.dueDate).getTime() !== task.dueDate?.getTime()) ||
+        (dto.assignedToId !== undefined && dto.assignedToId !== task.assignedToId);
+
+      if (forbiddenChanges) {
         throw new HttpError(
           403,
           "Assigned users can only update task status"
         );
       }
+
+      if (dto.status === undefined) {
+        throw new HttpError(403, "Assigned users must update status");
+      }
     }
 
-    // -------------------------------
-    // CREATOR UPDATES
-    // -------------------------------
+
+    // creator is updating
     if (isCreator) {
       if (
         dto.assignedToId !== undefined &&
@@ -172,9 +172,7 @@ export const updateTask = async (
 
     await taskRepoTx.save(task);
 
-    // -------------------------------
-    // AUDIT LOG
-    // -------------------------------
+    // entry for audit log if status changed
     if (dto.status !== undefined && dto.status !== oldStatus) {
       await logRepoTx.save(
         logRepoTx.create({
@@ -186,9 +184,7 @@ export const updateTask = async (
       );
     }
 
-    // -------------------------------
-    // NOTIFICATIONS
-    // -------------------------------
+    // triggering notifications
     if (
       dto.assignedToId !== undefined &&
       dto.assignedToId !== oldAssignee
@@ -230,9 +226,7 @@ export const updateTask = async (
 
     await queryRunner.commitTransaction();
 
-    // -------------------------------
-    // SOCKET EVENTS (AFTER COMMIT)
-    // -------------------------------
+    // Live update for all users
     const io = getIO();
     io.to("all-tasks").emit("task:updated", task);
 
@@ -260,7 +254,6 @@ export const updateTask = async (
 
 
 
-// FEATURE 4: Delete task (already implemented)
 export const deleteTask = async (taskId: string, userId: string) => {
   const task = await taskRepo.findOne({
     where: { id: taskId },
@@ -271,25 +264,22 @@ export const deleteTask = async (taskId: string, userId: string) => {
     throw new HttpError(404, "Task not found");
   }
 
-  // Authorization: Only creator can delete
+  // Only creator can delete
   if (task.creatorId !== userId) {
     throw new HttpError(403, "Only the task creator can delete this task");
   }
 
   await taskRepo.delete(taskId);
 
-  // Live update for all users
   const io = getIO();
-  io.to("all-tasks").emit("task:deleted", { 
-    taskId, 
-    deletedBy: userId 
+  io.to("all-tasks").emit("task:deleted", {
+    taskId,
+    deletedBy: userId
   });
 
-  // Return data only (success indication)
   return { success: true };
 };
 
-// FEATURE 3: Pagination for tasks
 export const getTasks = async (filters: {
   status?: string;
   priority?: string;
@@ -309,37 +299,32 @@ export const getTasks = async (filters: {
     .leftJoinAndSelect("task.creator", "creator")
     .leftJoinAndSelect("task.assignedTo", "assignedTo");
 
-  // Add user-specific filters
   if (filters.userId) {
     if (filters.assignedToMe) {
       qb.andWhere("task.assignedToId = :userId", { userId: filters.userId });
     }
-    
+
     if (filters.createdByMe) {
       qb.andWhere("task.creatorId = :userId", { userId: filters.userId });
     }
 
-    // If no specific filter, show tasks user is involved with
     if (!filters.assignedToMe && !filters.createdByMe) {
-      qb.andWhere("(task.creatorId = :userId OR task.assignedToId = :userId)", { 
-        userId: filters.userId 
+      qb.andWhere("(task.creatorId = :userId OR task.assignedToId = :userId)", {
+        userId: filters.userId
       });
     }
   }
 
-  // Status filter
   if (filters.status) {
     qb.andWhere("task.status = :status", { status: filters.status });
   }
 
-  // Priority filter
   if (filters.priority) {
     qb.andWhere("task.priority = :priority", {
       priority: filters.priority,
     });
   }
 
-  // Search filter
   if (filters.search) {
     qb.andWhere(
       "(task.title ILIKE :search OR task.description ILIKE :search)",
@@ -347,19 +332,16 @@ export const getTasks = async (filters: {
     );
   }
 
-  // REQUIRED: Sorting by Due Date
   const sortOrder = filters.sort || "ASC";
   qb.orderBy("task.dueDate", sortOrder);
 
-  // Get total count for pagination
   const total = await qb.getCount();
-  
-  // Apply pagination
+
   qb.skip(skip).take(limit);
 
   const tasks = await qb.getMany();
-  
-  return { 
+
+  return {
     tasks,
     pagination: {
       page,
@@ -369,12 +351,12 @@ export const getTasks = async (filters: {
       hasNext: page < Math.ceil(total / limit),
       hasPrev: page > 1
     }
-  }; 
+  };
 };
 
 export const getAssignedToUser = async (userId: string, page: number = 1, limit: number = 10) => {
   const skip = (page - 1) * limit;
-  
+
   const [tasks, total] = await taskRepo.findAndCount({
     where: { assignedToId: userId },
     relations: ["creator", "assignedTo"],
@@ -382,9 +364,8 @@ export const getAssignedToUser = async (userId: string, page: number = 1, limit:
     skip,
     take: limit,
   });
-  
-  // Return data only with pagination
-  return { 
+
+  return {
     tasks,
     pagination: {
       page,
@@ -397,7 +378,7 @@ export const getAssignedToUser = async (userId: string, page: number = 1, limit:
 
 export const getCreatedByUser = async (userId: string, page: number = 1, limit: number = 10) => {
   const skip = (page - 1) * limit;
-  
+
   const [tasks, total] = await taskRepo.findAndCount({
     where: { creatorId: userId },
     relations: ["creator", "assignedTo"],
@@ -405,9 +386,8 @@ export const getCreatedByUser = async (userId: string, page: number = 1, limit: 
     skip,
     take: limit,
   });
-  
-  // Return data only with pagination
-  return { 
+
+  return {
     tasks,
     pagination: {
       page,
@@ -415,12 +395,12 @@ export const getCreatedByUser = async (userId: string, page: number = 1, limit: 
       total,
       pages: Math.ceil(total / limit)
     }
-  }; 
+  };
 };
 
 export const getUrgentTasks = async (userId: string, page: number = 1, limit: number = 10) => {
   const skip = (page - 1) * limit;
-  
+
   const [tasks, total] = await taskRepo.findAndCount({
     where: [
       { creatorId: userId, priority: TaskPriority.URGENT },
@@ -431,9 +411,8 @@ export const getUrgentTasks = async (userId: string, page: number = 1, limit: nu
     skip,
     take: limit,
   });
-  
-  // Return data only with pagination
-  return { 
+
+  return {
     tasks,
     pagination: {
       page,
@@ -441,38 +420,34 @@ export const getUrgentTasks = async (userId: string, page: number = 1, limit: nu
       total,
       pages: Math.ceil(total / limit)
     }
-  }; 
+  };
 };
 
 export const getOverdueTasks = async (userId?: string, page: number = 1, limit: number = 10) => {
   const skip = (page - 1) * limit;
-  
+
   const qb = taskRepo
     .createQueryBuilder("task")
     .where("task.dueDate < NOW()")
-    .andWhere("task.status != :completedStatus", { 
-      completedStatus: TaskStatus.COMPLETED 
+    .andWhere("task.status != :completedStatus", {
+      completedStatus: TaskStatus.COMPLETED
     })
     .leftJoinAndSelect("task.creator", "creator")
     .leftJoinAndSelect("task.assignedTo", "assignedTo");
 
-  // Make it user-specific if userId is provided
   if (userId) {
-    qb.andWhere("(task.creatorId = :userId OR task.assignedToId = :userId)", { 
-      userId 
+    qb.andWhere("(task.creatorId = :userId OR task.assignedToId = :userId)", {
+      userId
     });
   }
 
-  // Get total count
   const total = await qb.getCount();
-  
-  // Apply pagination
+
   qb.skip(skip).take(limit);
-  
+
   const tasks = await qb.getMany();
-  
-  // Return data only with pagination
-  return { 
+
+  return {
     tasks,
     pagination: {
       page,
@@ -480,5 +455,5 @@ export const getOverdueTasks = async (userId?: string, page: number = 1, limit: 
       total,
       pages: Math.ceil(total / limit)
     }
-  }; 
+  };
 };

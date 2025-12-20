@@ -1,4 +1,3 @@
-// controllers/Dashboard.controller.ts
 import { Request, Response } from "express";
 import {
   getAssignedToUser,
@@ -22,7 +21,6 @@ export const getDashboard = async (
   try {
     const userId = req.user!.id;
 
-    // Get all three views in parallel
     const [
       assignedResult,
       createdResult, 
@@ -35,7 +33,7 @@ export const getDashboard = async (
       getUrgentTasks(userId),
     ]);
 
-    // Extract tasks from each result
+    // Extracting tasks from each result
     const assignedTasks = assignedResult.tasks;
     const createdTasks = createdResult.tasks;
     const overdueTasks = overdueResult.tasks;

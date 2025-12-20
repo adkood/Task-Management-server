@@ -12,7 +12,6 @@ import {
 } from "../services/Task.service";
 import { HttpError } from "../utils/HttpError";
 
-// Add this interface if not already defined elsewhere
 interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
@@ -120,10 +119,8 @@ export const remove = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-// FEATURE 3: Updated getAll with pagination
 export const getAll = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    // Parse query parameters with pagination
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     
@@ -175,7 +172,6 @@ export const getAll = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-// Updated with pagination
 export const assignedToMe = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
@@ -205,7 +201,6 @@ export const assignedToMe = async (req: AuthenticatedRequest, res: Response) => 
   }
 };
 
-// Updated with pagination
 export const createdByMe = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
@@ -236,7 +231,6 @@ export const createdByMe = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-// Updated with pagination
 export const overdue = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;

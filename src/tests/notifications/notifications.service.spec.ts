@@ -1,5 +1,3 @@
-// src/tests/notifications/notifications.service.spec.ts
-
 jest.mock("../../data-source", () => {
   const mockQB = {
     where: jest.fn().mockReturnThis(),
@@ -55,9 +53,7 @@ describe("Notification Service", () => {
     jest.clearAllMocks();
   });
 
-  // -------------------------
   // createNotification
-  // -------------------------
   describe("createNotification", () => {
     it("should create a notification and emit via socket", async () => {
       const mockNotification = { id: "n1", userId: "u1", type: "TASK_ASSIGNED", payload: {} };
@@ -76,9 +72,7 @@ describe("Notification Service", () => {
     });
   });
 
-  // -------------------------
   // getAllNotifications
-  // -------------------------
   describe("getAllNotifications", () => {
     it("should return notifications with counts and pagination", async () => {
       mockQB.getMany.mockResolvedValue([{ id: "n1" }]);
@@ -95,9 +89,7 @@ describe("Notification Service", () => {
     });
   });
 
-  // -------------------------
   // markNotificationAsRead
-  // -------------------------
   describe("markNotificationAsRead", () => {
     it("should mark notification as read and emit", async () => {
       const mockNotification = { id: "n1", userId: "u1", isRead: false };
@@ -118,9 +110,7 @@ describe("Notification Service", () => {
     });
   });
 
-  // -------------------------
   // markAllRead
-  // -------------------------
   describe("markAllRead", () => {
     it("should mark all notifications as read and emit", async () => {
       notificationRepo.update.mockResolvedValue({});
@@ -136,9 +126,7 @@ describe("Notification Service", () => {
     });
   });
 
-  // -------------------------
   // getUnreadCount
-  // -------------------------
   describe("getUnreadCount", () => {
     it("should return unread count", async () => {
       notificationRepo.count.mockResolvedValue(3);

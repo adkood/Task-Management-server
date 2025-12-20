@@ -1,4 +1,3 @@
-// controllers/Auth.controller.ts
 import { NextFunction, Request, Response } from "express";
 import { SignupDto } from "../dtos/Signup.dto";
 import { loginUser, registerUser } from "../services/Auth.service";
@@ -37,16 +36,15 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
     const body: LoginDto = req.body;
     const data = await loginUser(body);
 
-    // Set HttpOnly cookie
+    // Setting HttpOnly cookie
     res.cookie('token', data.token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'none', // 'strict',
+      sameSite: 'none',
       maxAge: 24 * 60 * 60 * 1000,
       path: '/',
     });
 
-    // Remove token from response data since it's in cookie
     const { token, ...userData } = data;
 
     return res.status(200).json({
@@ -73,11 +71,11 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
 
 export const logout = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Clear the token cookie
+
     res.clearCookie('token', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'none', // 'strict',
+      sameSite: 'none', 
       path: '/',
     });
 

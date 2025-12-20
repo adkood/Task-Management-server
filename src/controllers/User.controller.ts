@@ -1,4 +1,3 @@
-// controllers/User.controller.ts
 import { NextFunction, Request, Response } from "express";
 import { getUserById, updateUserById, getAllUsers } from "../services/User.service";
 import { UpdateUserDto } from "../dtos/User.dto";

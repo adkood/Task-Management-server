@@ -20,9 +20,7 @@ describe("Auth Controller", () => {
     jest.clearAllMocks();
   });
 
-  // ---------------------------
-  // Signup tests
-  // ---------------------------
+  // Signup test
   describe("signup", () => {
     it("should register a user successfully", async () => {
       const mockData = { id: "123", name: "Test User" };
@@ -73,9 +71,7 @@ describe("Auth Controller", () => {
     });
   });
 
-  // ---------------------------
-  // Login tests
-  // ---------------------------
+  // Login test
   describe("login", () => {
     it("should login a user and set cookie", async () => {
       const mockData = { token: "abc123", id: "123", name: "Test User" };
