@@ -88,32 +88,30 @@ export const updateTask = async (taskId: string, dto: UpdateTaskDto, userId: str
     relations: ["creator", "assignedTo"]
   });
 
-  if (!task) {
-    throw new HttpError(404, "Task not found");
-  }
+  if (!task) throw new HttpError(404, "Task not found");
 
-  // FEATURE 1: Enhanced permission logic
   const isCreator = task.creatorId === userId;
   const isAssignee = task.assignedToId === userId;
-  
+
   // Only creator or assignee can update
   if (!isCreator && !isAssignee) {
     throw new HttpError(403, "Not authorized to update this task");
   }
 
-  // If user is NOT the creator, they can only update status
+  // -------------------------------
+  // Permission checks
+  // -------------------------------
+
   if (!isCreator) {
-    // Check if user is trying to update anything other than status
-    const nonStatusUpdates = ['title', 'description', 'priority', 'assignedToId', 'dueDate'];
-    const hasNonStatusUpdate = nonStatusUpdates.some(field => dto[field as keyof UpdateTaskDto] !== undefined);
-    
-    if (hasNonStatusUpdate) {
-      throw new HttpError(403, "Only the task creator can update title, description, priority, assignee, or due date");
-    }
-    
-    // Only allow status update for assignees
-    if (dto.status === undefined) {
+    // Assignee can ONLY update status
+    const forbiddenFields = Object.keys(dto).filter(
+      field => field !== "status"
+    );
+    if (forbiddenFields.length > 0) {
       throw new HttpError(403, "Assigned users can only update task status");
+    }
+    if (dto.status === undefined) {
+      throw new HttpError(403, "Assigned users must provide status");
     }
   }
 
@@ -121,103 +119,75 @@ export const updateTask = async (taskId: string, dto: UpdateTaskDto, userId: str
   const oldStatus = task.status;
   const oldPriority = task.priority;
 
-  // Validate assigned user exists if changing (only creator can change)
-  if (dto.assignedToId && dto.assignedToId !== task.assignedToId) {
-    if (!isCreator) {
-      throw new HttpError(403, "Only task creator can change assignee");
+  // -------------------------------
+  // Creator-only validations
+  // -------------------------------
+  if (isCreator) {
+    // Validate assignee exists if changing
+    if (dto.assignedToId && dto.assignedToId !== task.assignedToId) {
+      const assignedUser = await userRepo.findOneBy({ id: dto.assignedToId });
+      if (!assignedUser) throw new HttpError(404, "Assigned user not found");
+      task.assignedToId = dto.assignedToId;
     }
-    const assignedUser = await userRepo.findOneBy({ id: dto.assignedToId });
-    if (!assignedUser) {
-      throw new HttpError(404, "Assigned user not found");
+
+    // Validate due date
+    if (dto.dueDate) {
+      const dueDate = new Date(dto.dueDate);
+      if (dueDate <= new Date()) throw new HttpError(400, "Due date must be in the future");
+      task.dueDate = dueDate;
     }
+
+    if (dto.title !== undefined) task.title = dto.title;
+    if (dto.description !== undefined) task.description = dto.description;
+    if (dto.priority !== undefined) task.priority = dto.priority;
   }
 
-  // Validate due date is in the future if changing (only creator can change)
-  if (dto.dueDate) {
-    if (!isCreator) {
-      throw new HttpError(403, "Only task creator can change due date");
-    }
-    const dueDate = new Date(dto.dueDate);
-    if (dueDate <= new Date()) {
-      throw new HttpError(400, "Due date must be in the future");
-    }
-    task.dueDate = dueDate;
-  }
-
-  // Update only provided fields with permission checks
-  if (dto.title !== undefined) {
-    if (!isCreator) throw new HttpError(403, "Only creator can update title");
-    task.title = dto.title;
-  }
-  
-  if (dto.description !== undefined) {
-    if (!isCreator) throw new HttpError(403, "Only creator can update description");
-    task.description = dto.description;
-  }
-  
-  if (dto.status !== undefined) {
-    task.status = dto.status;
-  }
-  
-  if (dto.priority !== undefined) {
-    if (!isCreator) throw new HttpError(403, "Only creator can update priority");
-    task.priority = dto.priority;
-  }
-  
-  if (dto.assignedToId !== undefined) {
-    if (!isCreator) throw new HttpError(403, "Only creator can change assignee");
-    task.assignedToId = dto.assignedToId;
-  }
+  // -------------------------------
+  // Status can be updated by anyone with permission
+  // -------------------------------
+  if (dto.status !== undefined) task.status = dto.status;
 
   await taskRepo.save(task);
 
-  // REQUIRED: Live update for all users when task's status, priority, or assignee changes
+  // -------------------------------
+  // Emit updates via Socket.IO
+  // -------------------------------
   const io = getIO();
   const updatedTask = await taskRepo.findOne({
     where: { id: task.id },
     relations: ["creator", "assignedTo"]
   });
-  
-  // Emit to all users viewing task list or dashboard
+
   io.to("all-tasks").emit("task:updated", updatedTask || task);
 
-  // REQUIRED: Assignment notification when assignee changes
+  // Assignment notification
   if (dto.assignedToId && dto.assignedToId !== oldAssignee) {
     await createNotification(
       dto.assignedToId,
       "TASK_ASSIGNED",
-      {
-        taskId: task.id,
-        title: task.title,
-        assignedBy: userId,
-      }
+      { taskId: task.id, title: task.title, assignedBy: userId }
     );
-    
-    // Immediate socket notification to new assignee
     io.to(`user:${dto.assignedToId}`).emit("task:assigned-to-you", {
       taskId: task.id,
-      title: task.title,
+      title: task.title
     });
   }
 
-  // Optional: Notify on status/priority changes
+  // Notify on status/priority changes
   const statusChanged = dto.status && dto.status !== oldStatus;
   const priorityChanged = dto.priority && dto.priority !== oldPriority;
-  
+
   if ((statusChanged || priorityChanged) && task.assignedToId && task.assignedToId !== userId) {
     await createNotification(
       task.assignedToId,
       "TASK_UPDATED",
-      {
-        taskId: task.id,
-        title: task.title,
-      }
+      { taskId: task.id, title: task.title }
     );
   }
 
-  // Return data only
   return { task: updatedTask || task };
 };
+
 
 // FEATURE 4: Delete task (already implemented)
 export const deleteTask = async (taskId: string, userId: string) => {
