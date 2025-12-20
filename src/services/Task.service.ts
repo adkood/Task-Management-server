@@ -8,9 +8,12 @@ import { HttpError } from "../utils/HttpError";
 import { TaskStatus } from "../enums/TaskStatus";
 import { TaskPriority } from "../enums/TaskPriority";
 import { In } from "typeorm";
+import { TaskStatusLog } from "../entities/TaskStatusLog";
+import { Notification } from "../entities/Notification";
 
 const taskRepo = AppDataSource.getRepository(Task);
 const userRepo = AppDataSource.getRepository(User);
+const taskStatusLogRepo = AppDataSource.getRepository(TaskStatusLog);
 
 export const createTask = async (dto: CreateTaskDto, creatorId: string) => {
   // Validate assigned user exists
@@ -82,111 +85,179 @@ export const createTask = async (dto: CreateTaskDto, creatorId: string) => {
   return { task: taskWithRelations || task };
 };
 
-export const updateTask = async (taskId: string, dto: UpdateTaskDto, userId: string) => {
-  const task = await taskRepo.findOne({
-    where: { id: taskId },
-    relations: ["creator", "assignedTo"]
-  });
 
-  if (!task) throw new HttpError(404, "Task not found");
+export const updateTask = async (
+  taskId: string,
+  dto: UpdateTaskDto,
+  userId: string
+) => {
+  const queryRunner = AppDataSource.createQueryRunner();
 
-  const isCreator = task.creatorId === userId;
-  const isAssignee = task.assignedToId === userId;
+  await queryRunner.connect();
+  await queryRunner.startTransaction();
 
-  // Only creator or assignee can update
-  if (!isCreator && !isAssignee) {
-    throw new HttpError(403, "Not authorized to update this task");
-  }
+  try {
+    const taskRepoTx = queryRunner.manager.getRepository(Task);
+    const logRepoTx =
+      queryRunner.manager.getRepository(TaskStatusLog);
+    const notificationRepoTx =
+      queryRunner.manager.getRepository(Notification);
+    const userRepoTx =
+      queryRunner.manager.getRepository(User);
 
-  // -------------------------------
-  // Permission checks
-  // -------------------------------
-
-  if (!isCreator) {
-    // Assignee can ONLY update status
-    const forbiddenFields = Object.keys(dto).filter(
-      field => field !== "status"
-    );
-    if (forbiddenFields.length > 0) {
-      throw new HttpError(403, "Assigned users can only update task status");
-    }
-    if (dto.status === undefined) {
-      throw new HttpError(403, "Assigned users must provide status");
-    }
-  }
-
-  const oldAssignee = task.assignedToId;
-  const oldStatus = task.status;
-  const oldPriority = task.priority;
-
-  // -------------------------------
-  // Creator-only validations
-  // -------------------------------
-  if (isCreator) {
-    // Validate assignee exists if changing
-    if (dto.assignedToId && dto.assignedToId !== task.assignedToId) {
-      const assignedUser = await userRepo.findOneBy({ id: dto.assignedToId });
-      if (!assignedUser) throw new HttpError(404, "Assigned user not found");
-      task.assignedToId = dto.assignedToId;
-    }
-
-    // Validate due date
-    if (dto.dueDate) {
-      const dueDate = new Date(dto.dueDate);
-      if (dueDate <= new Date()) throw new HttpError(400, "Due date must be in the future");
-      task.dueDate = dueDate;
-    }
-
-    if (dto.title !== undefined) task.title = dto.title;
-    if (dto.description !== undefined) task.description = dto.description;
-    if (dto.priority !== undefined) task.priority = dto.priority;
-  }
-
-  // -------------------------------
-  // Status can be updated by anyone with permission
-  // -------------------------------
-  if (dto.status !== undefined) task.status = dto.status;
-
-  await taskRepo.save(task);
-
-  // -------------------------------
-  // Emit updates via Socket.IO
-  // -------------------------------
-  const io = getIO();
-  const updatedTask = await taskRepo.findOne({
-    where: { id: task.id },
-    relations: ["creator", "assignedTo"]
-  });
-
-  io.to("all-tasks").emit("task:updated", updatedTask || task);
-
-  // Assignment notification
-  if (dto.assignedToId && dto.assignedToId !== oldAssignee) {
-    await createNotification(
-      dto.assignedToId,
-      "TASK_ASSIGNED",
-      { taskId: task.id, title: task.title, assignedBy: userId }
-    );
-    io.to(`user:${dto.assignedToId}`).emit("task:assigned-to-you", {
-      taskId: task.id,
-      title: task.title
+    const task = await taskRepoTx.findOne({
+      where: { id: taskId },
+      relations: ["creator", "assignedTo"],
     });
+
+    if (!task) throw new HttpError(404, "Task not found");
+
+    const isCreator = task.creatorId === userId;
+    const isAssignee = task.assignedToId === userId;
+
+    if (!isCreator && !isAssignee) {
+      throw new HttpError(403, "Not authorized");
+    }
+
+    const oldStatus = task.status;
+    const oldPriority = task.priority;
+    const oldAssignee = task.assignedToId;
+
+    // -------------------------------
+    // PERMISSIONS
+    // -------------------------------
+    if (!isCreator) {
+      dto = { status: dto.status };
+      if (dto.status === undefined) {
+        throw new HttpError(
+          403,
+          "Assigned users can only update task status"
+        );
+      }
+    }
+
+    // -------------------------------
+    // CREATOR UPDATES
+    // -------------------------------
+    if (isCreator) {
+      if (
+        dto.assignedToId !== undefined &&
+        dto.assignedToId !== task.assignedToId
+      ) {
+        const user = await userRepoTx.findOneBy({
+          id: dto.assignedToId,
+        });
+        if (!user) throw new HttpError(404, "User not found");
+        task.assignedToId = dto.assignedToId;
+      }
+
+      if (dto.dueDate !== undefined) {
+        const dueDate = new Date(dto.dueDate);
+        if (dueDate <= new Date()) {
+          throw new HttpError(400, "Invalid due date");
+        }
+        task.dueDate = dueDate;
+      }
+
+      if (dto.title !== undefined) task.title = dto.title;
+      if (dto.description !== undefined)
+        task.description = dto.description;
+      if (dto.priority !== undefined)
+        task.priority = dto.priority;
+    }
+
+    if (dto.status !== undefined) {
+      task.status = dto.status;
+    }
+
+    await taskRepoTx.save(task);
+
+    // -------------------------------
+    // AUDIT LOG
+    // -------------------------------
+    if (dto.status !== undefined && dto.status !== oldStatus) {
+      await logRepoTx.save(
+        logRepoTx.create({
+          taskId: task.id,
+          updatedById: userId,
+          oldStatus,
+          newStatus: dto.status,
+        })
+      );
+    }
+
+    // -------------------------------
+    // NOTIFICATIONS
+    // -------------------------------
+    if (
+      dto.assignedToId !== undefined &&
+      dto.assignedToId !== oldAssignee
+    ) {
+      await notificationRepoTx.save(
+        notificationRepoTx.create({
+          userId: dto.assignedToId,
+          type: "TASK_ASSIGNED",
+          payload: {
+            taskId: task.id,
+            title: task.title,
+          },
+        })
+      );
+    }
+
+    const statusChanged =
+      dto.status !== undefined && dto.status !== oldStatus;
+    const priorityChanged =
+      dto.priority !== undefined &&
+      dto.priority !== oldPriority;
+
+    if (
+      (statusChanged || priorityChanged) &&
+      task.assignedToId &&
+      task.assignedToId !== userId
+    ) {
+      await notificationRepoTx.save(
+        notificationRepoTx.create({
+          userId: task.assignedToId,
+          type: "TASK_UPDATED",
+          payload: {
+            taskId: task.id,
+            title: task.title,
+          },
+        })
+      );
+    }
+
+    await queryRunner.commitTransaction();
+
+    // -------------------------------
+    // SOCKET EVENTS (AFTER COMMIT)
+    // -------------------------------
+    const io = getIO();
+    io.to("all-tasks").emit("task:updated", task);
+
+    if (
+      dto.assignedToId !== undefined &&
+      dto.assignedToId !== oldAssignee
+    ) {
+      io.to(`user:${dto.assignedToId}`).emit(
+        "task:assigned-to-you",
+        {
+          taskId: task.id,
+          title: task.title,
+        }
+      );
+    }
+
+    return { task };
+  } catch (error) {
+    await queryRunner.rollbackTransaction();
+    throw error;
+  } finally {
+    await queryRunner.release();
   }
-
-  // Notify on status/priority changes
-  const statusChanged = dto.status && dto.status !== oldStatus;
-  const priorityChanged = dto.priority && dto.priority !== oldPriority;
-
-  if ((statusChanged || priorityChanged) && task.assignedToId && task.assignedToId !== userId) {
-    await createNotification(
-      task.assignedToId,
-      "TASK_UPDATED",
-      { taskId: task.id, title: task.title }
-    );
-  }
-
-  return { task: updatedTask || task };
 };
+
 
 
 // FEATURE 4: Delete task (already implemented)
