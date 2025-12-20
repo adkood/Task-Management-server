@@ -1,4 +1,3 @@
-// src/services/auditLog.service.ts
 import { AppDataSource } from "../data-source";
 import { TaskStatusLog } from "../entities/TaskStatusLog";
 
@@ -21,6 +20,21 @@ export const getAuditLogsService = async ({
 
   const [logs, total] = await taskStatusLogRepo.findAndCount({
     where: whereCondition,
+    relations: {
+      updatedBy: true, 
+    },
+    select: {
+      id: true,
+      taskId: true,
+      oldStatus: true,
+      newStatus: true,
+      createdAt: true,
+      updatedBy: {
+        id: true,
+        name: true,
+        username: true,
+      },
+    },
     order: {
       createdAt: "DESC",
     },
